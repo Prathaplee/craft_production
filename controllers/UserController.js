@@ -179,49 +179,43 @@ exports.deleteUser = async (req, res) => {
   }
 };
 
-
 exports.verifyOtp = async (req, res) => {
   try {
-    const { phonenumber, otp } = req.body;
+    const { phonenumber, otp, fcm_token } = req.body;
 
     // Validate input
-    if (!phonenumber || !otp) {
-      return res.status(400).send({ message: 'Phone number and OTP are required' });
+    if (!phonenumber || !otp || !fcm_token) {
+      return res.status(400).send({ message: 'Phone number, OTP, and FCM token are required' });
     }
 
-    // Ensure phone number is a string
     const sanitizedPhoneNumber = String(phonenumber).trim();
 
-    // Find user by phone number
     const user = await User.findOne({ phonenumber: sanitizedPhoneNumber });
     if (!user) {
       return res.status(404).send({ message: 'User not found' });
     }
 
-    // Compare OTPs as strings
     if (String(user.otp) !== String(otp)) {
       return res.status(401).send({ message: 'Invalid OTP' });
     }
 
-    // Mark user as verified and clear OTP
+    // ✅ Mark user verified, save token and fcm_token
     user.isVerified = true;
-    user.otp = null; // Clear OTP after successful verification
+    user.otp = null;
+    user.fcm_token = fcm_token;
 
-    // Generate a new JWT token with a secret key stored in an environment variable
     const token = jwt.sign(
       { userId: user._id, username: user.username, role: user.role },
-      process.env.JWT_SECRET, // Secret key from environment variables
-      { expiresIn: '168h' } // Token expiry time
+      process.env.JWT_SECRET,
+      { expiresIn: '168h' }
     );
 
-    // Save the token in the user document (optional)
-    user.token = token; // Store the token in the database (optional, depending on your needs)
+    user.token = token;
     await user.save();
 
-    // Return success message along with the token and user details
     return res.send({
       message: 'OTP verified successfully',
-      token, // Include the JWT token
+      token,
       user: {
         _id: user._id,
         username: user.username,
@@ -231,6 +225,7 @@ exports.verifyOtp = async (req, res) => {
         role: user.role,
         referralCode: user.referralCode,
         isVerified: user.isVerified,
+        fcm_token: user.fcm_token, // Optional: return to confirm it's saved
       },
     });
   } catch (err) {

@@ -11,6 +11,7 @@ const referralRoutes = require('./routes/referralRoutes');
 const rateRoutes = require('./routes/rateRoutes');
 const versionRoutes = require('./routes/versionRoutes');
 const authRoutes=require('./routes/authRoutes.js')
+const routes=reqiure('./routes/routes.js')
 const os = require('os'); // Import os module
 
 const { swaggerUi, swaggerDocs } = require('./swagger'); // Import Swagger configuration
@@ -37,7 +38,7 @@ app.use('/', verifyToken, paymentRoutes);
 app.use('/', verifyToken, referralRoutes);
 app.use('/', verifyToken, rateRoutes);
 app.use('/', verifyToken, versionRoutes);
-
+app.use('/', verifyToken, routes);
 
 // app.use('/', userRoutes, cors());
 // app.use('/', schemeRoutes);
@@ -67,3 +68,6 @@ app.listen(port, () => {
   console.log(`Server started on http://${ipAddress}:${port}`);
   console.log(`Swagger Docs available at http://${ipAddress}:${port}/api-docs`);
 });
+
+
+require('./crons/reminderCron');

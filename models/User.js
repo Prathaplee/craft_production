@@ -73,6 +73,10 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    fcm_token: {
+      type: String,
+      required: false,
+    },
   },
   { timestamps: true }
 );

@@ -292,33 +292,43 @@ const updateDiamondSubscription = async (req, res) => {
 
 const getSubscriptionReport = async (req, res) => {
   try {
-    // Fetch gold and diamond subscriptions
     const goldSubscriptions = await GoldSubscription.find({});
     const diamondSubscriptions = await DiamondSubscription.find({});
 
-    // Helper function to fetch scheme data
-    const fetchSchemeDetails = async (subscriptions) => {
+    const fetchSchemeAndUserDetails = async (subscriptions) => {
       return Promise.all(
         subscriptions.map(async (subscription) => {
+          let scheme = null;
+          let userPhone = null;
+
+          // Fetch scheme if exists
           if (subscription.scheme_id) {
-            const scheme = await Scheme.findById(subscription.scheme_id);
-            return {
-              ...subscription.toObject(),
-              schemeDetails: scheme || null,
-            };
+            scheme = await Scheme.findById(subscription.scheme_id);
           }
-          return subscription;
+
+          // Fetch user phone number if user_id exists
+          if (subscription.user_id) {
+            const user = await User.findById(subscription.user_id, 'phonenumber');
+            userPhone = user?.phonenumber || null;
+            fcmToken=user?.fcm_token || null;
+          }
+
+          return {
+            ...subscription.toObject(),
+            schemeDetails: scheme || null,
+            phonenumber: userPhone,
+            fcm_token: fcmToken
+          };
         })
       );
     };
 
-    // Fetch scheme details for each subscription
-    const goldSubscriptionsWithSchemes = await fetchSchemeDetails(goldSubscriptions);
-    const diamondSubscriptionsWithSchemes = await fetchSchemeDetails(diamondSubscriptions);
+    const goldSubscriptionsWithDetails = await fetchSchemeAndUserDetails(goldSubscriptions);
+    const diamondSubscriptionsWithDetails = await fetchSchemeAndUserDetails(diamondSubscriptions);
 
     const subscriptionReport = {
-      gold: goldSubscriptionsWithSchemes,
-      diamond: diamondSubscriptionsWithSchemes,
+      gold: goldSubscriptionsWithDetails,
+      diamond: diamondSubscriptionsWithDetails,
     };
 
     res.status(200).json({
@@ -334,50 +344,79 @@ const getSubscriptionReport = async (req, res) => {
   }
 };
 
+// const getSubscriptionReport = async (req, res) => {
+//   try {
+//     const goldSubscriptions = await GoldSubscription.find({});
+//     const diamondSubscriptions = await DiamondSubscription.find({});
+//     const fetchSchemeDetails = async (subscriptions) => {
+//       return Promise.all(
+//         subscriptions.map(async (subscription) => {
+//           if (subscription.scheme_id) {
+//             const scheme = await Scheme.findById(subscription.scheme_id);
+//             return {
+//               ...subscription.toObject(),
+//               schemeDetails: scheme || null,
+//             };
+//           }
+//           return subscription;
+//         })
+//       );
+//     };
+//     const goldSubscriptionsWithSchemes = await fetchSchemeDetails(goldSubscriptions);
+//     const diamondSubscriptionsWithSchemes = await fetchSchemeDetails(diamondSubscriptions);
+//     const subscriptionReport = {
+//       gold: goldSubscriptionsWithSchemes,
+//       diamond: diamondSubscriptionsWithSchemes,
+//     };
 
-const { getKYC } = require('./UserController'); // Adjust the path to where `getKYC` is defined
+//     res.status(200).json({
+//       message: "Subscription report retrieved successfully",
+//       data: subscriptionReport,
+//     });
+//   } catch (error) {
+//     console.error("Error fetching subscription report:", error);
+//     res.status(500).json({
+//       message: "An error occurred while fetching the subscription report",
+//       error: error.message,
+//     });
+//   }
+// };
+
+
+const { getKYC } = require('./UserController'); 
 
 
 const getPendingRequests = async (req, res) => {
   try {
-    // Retrieve all pending requests from both subscription models
     const goldPendingRequests = await GoldSubscription.find({ subscribe_status: "waiting" });
     const diamondPendingRequests = await DiamondSubscription.find({ subscribe_status: "waiting" });
 
-    // Combine the results from both subscription types
     const allPendingRequests = [...goldPendingRequests, ...diamondPendingRequests];
-
-    // If no pending requests found, return a message
     if (allPendingRequests.length === 0) {
       return res.status(404).json({ message: "No pending requests found" });
     }
 
     const serverUrl = `${req.protocol}://${req.get("host")}`;
 
-    // Retrieve user details and optionally KYC data for each pending request
     const enrichedRequests = await Promise.all(
       allPendingRequests.map(async (request) => {
         try {
           const user = await User.findById(request.user_id);
           let schemeName = null;
-
-          // Fetch Scheme Name using scheme_id
           if (request.scheme_id) {
             const scheme = await Scheme.findById(request.scheme_id);
             schemeName = scheme ? scheme.scheme_name : "Scheme not found";
           }
 
           if (user) {
-            // Initialize user details without KYC data
             const userDetails = { ...user.toObject() };
-            delete userDetails.kyc; // Exclude KYC data from user details
+            delete userDetails.kyc; 
 
-            // Check if KYC data exists and fetch it if needed
             if (user.kyc && user.kyc.aadhaar_images && user.kyc.pan_images) {
               return {
                 ...request.toObject(),
                 userDetails,
-                schemeName, // Add scheme name
+                schemeName, 
                 kyc: {
                   aadhaar_images: user.kyc.aadhaar_images.map((id) => ({
                     fileId: id,
@@ -390,8 +429,6 @@ const getPendingRequests = async (req, res) => {
                 },
               };
             }
-
-            // If no KYC data, return request with user details and scheme name
             return {
               ...request.toObject(),
               userDetails,
@@ -428,28 +465,18 @@ const getPendingRequests = async (req, res) => {
   }
 };
 
-
-
 const getSubscriptionReporUser = async (req, res) => {
   try {
     const { user_id } = req.params;
-
-    // Check if user_id is provided
     if (!user_id) {
       return res.status(400).json({ message: "User ID is required" });
     }
-
-    // Fetch subscriptions for the specific user
     const goldSubscriptions = await GoldSubscription.find({ user_id });
     const diamondSubscriptions = await DiamondSubscription.find({ user_id });
-
-    // Combine subscription reports
     const subscriptionReport = {
       gold: goldSubscriptions,
       diamond: diamondSubscriptions,
     };
-
-    // Send response
     res.status(200).json({
       message: "Subscription report retrieved successfully",
       data: subscriptionReport,

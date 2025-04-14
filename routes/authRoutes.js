@@ -168,7 +168,7 @@ router.post('/login', UserController.login);
  * @swagger
  * /verify-otp:
  *   post:
- *     summary: Verify the OTP for a user.
+ *     summary: Verify the OTP for a user and optionally update FCM token.
  *     tags:
  *       - Authentication
  *     requestBody:
@@ -186,6 +186,10 @@ router.post('/login', UserController.login);
  *                 type: string
  *                 description: The OTP sent to the user's phone.
  *                 example: "123456"
+ *               fcm_token:
+ *                 type: string
+ *                 description: Firebase Cloud Messaging (FCM) token from the user's device.
+ *                 example: "fcm_example_token_abc123"
  *     responses:
  *       200:
  *         description: OTP verified successfully.
@@ -197,6 +201,30 @@ router.post('/login', UserController.login);
  *                 message:
  *                   type: string
  *                   example: "OTP verified successfully"
+ *                 token:
+ *                   type: string
+ *                   example: "eyJhbGciOiJIUzI1NiIsInR..."
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     _id:
+ *                       type: string
+ *                     username:
+ *                       type: string
+ *                     fullname:
+ *                       type: string
+ *                     phonenumber:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     role:
+ *                       type: string
+ *                     referralCode:
+ *                       type: string
+ *                     isVerified:
+ *                       type: boolean
+ *                     fcm_token:
+ *                       type: string
  *       400:
  *         description: Missing phone number or OTP in the request body.
  *         content:
@@ -241,7 +269,7 @@ router.post('/login', UserController.login);
  *                   type: string
  *                   example: "An unexpected error occurred"
  */
-
 router.post('/verify-otp', UserController.verifyOtp);
+
 
 module.exports = router;
