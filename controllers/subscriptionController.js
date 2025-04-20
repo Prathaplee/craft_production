@@ -155,6 +155,46 @@ const createDiamondSubscription = async (req, res) => {
   }
 }
 
+// const createDiamondSubscription = async (req, res) => {
+//   try {
+//     const { user_id, scheme_id, initial_amount} = req.body;
+//     const user = await User.findById(user_id);
+//     if (!user) {
+//       return res.status(400).json({ message: "User not found" });
+//     }
+//     if (!user.kyc || !user.kyc.aadhaar_images || !user.kyc.pan_images || !user.aadhaar_number || !user.pan_number){
+//       return res.status(400).json({ message: "User KYC not completed" });
+//     }
+//     const scheme = await Scheme.findById(scheme_id);
+//     if (!scheme) {
+//       return res.status(400).json({ message: "Scheme not found" });
+//     }
+//     if (scheme.scheme_type !== 'diamond') {
+//       return res.status(400).json({ message: "This is not a Diamond subscription scheme" });
+//     }
+//     const subscriptionData = {
+//       user_id,
+//       scheme_id,
+//       initial_amount,
+//       payment_status:'pending',
+//       subscribe_status: 'waiting',
+//       created_at: new Date(),
+//     };
+//     if (!initial_amount) {
+//       return res.status(400).json({ message: "Amount is required for Diamond subscription" });
+//     }
+//     subscriptionData.initial_amount = initial_amount;
+//     const subscription = new DiamondSubscription(subscriptionData);
+
+//     await subscription.save();
+//     res.status(201).json({ message: "Diamond subscription created successfully", subscription });
+
+//   } catch (error) {
+//     console.error(error);
+//     res.status(500).json({ message: "An error occurred while creating the subscription", error });
+//   }
+// };
+
 const updateGoldSubscription = async (req, res) => {
   try {
     const { subscription_id } = req.params;

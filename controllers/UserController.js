@@ -13,7 +13,7 @@ const { GridFSBucket } = require("mongodb");
 const stream = require("stream");
 
 exports.signup = async (req, res) => {
-  const { username, fullname, phonenumber, email, password ,role} = req.body;
+  const { username, fullname, phonenumber, email, password ,role, fcm_token} = req.body;
 
   try {
     // Check if user already exists by email
@@ -37,6 +37,7 @@ exports.signup = async (req, res) => {
       password: hashedPassword,  // Store the hashed password
       role,
       referralCode,  // Set the referral code
+      fcm_token,
     });
 
     // Save the user to the database
@@ -54,7 +55,7 @@ exports.signup = async (req, res) => {
         role: savedUser.role,
         referralCode: savedUser.referralCode, // Ensure referral code is included
         isAddressAdded: savedUser.isAddressAdded,
-
+        fcm_token: savedUser.fcm_token,
       },
     });
   } catch (err) {
@@ -181,11 +182,11 @@ exports.deleteUser = async (req, res) => {
 
 exports.verifyOtp = async (req, res) => {
   try {
-    const { phonenumber, otp, fcm_token } = req.body;
+    const { phonenumber, otp} = req.body;
 
     // Validate input
-    if (!phonenumber || !otp || !fcm_token) {
-      return res.status(400).send({ message: 'Phone number, OTP, and FCM token are required' });
+    if (!phonenumber || !otp) {
+      return res.status(400).send({ message: 'Phone number and OTP are required' });
     }
 
     const sanitizedPhoneNumber = String(phonenumber).trim();
@@ -202,7 +203,6 @@ exports.verifyOtp = async (req, res) => {
     // ✅ Mark user verified, save token and fcm_token
     user.isVerified = true;
     user.otp = null;
-    user.fcm_token = fcm_token;
 
     const token = jwt.sign(
       { userId: user._id, username: user.username, role: user.role },
@@ -225,7 +225,6 @@ exports.verifyOtp = async (req, res) => {
         role: user.role,
         referralCode: user.referralCode,
         isVerified: user.isVerified,
-        fcm_token: user.fcm_token, // Optional: return to confirm it's saved
       },
     });
   } catch (err) {
