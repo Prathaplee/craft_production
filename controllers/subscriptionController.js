@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Scheme = require('../models/Scheme');
 const moment = require('moment');
 const Rate = require('../models/Rate');
+const admin = require('./../config/firebase');
 
 const createGoldSubscription = async (req, res) => {
   try {
@@ -89,46 +90,70 @@ const createGoldSubscription = async (req, res) => {
   }
 };
 
-
 const createDiamondSubscription = async (req, res) => {
   try {
-    const { user_id, scheme_id, initial_amount} = req.body;
+    const { user_id, scheme_id, initial_amount } = req.body;
+
     const user = await User.findById(user_id);
-    if (!user) {
-      return res.status(400).json({ message: "User not found" });
-    }
-    if (!user.kyc || !user.kyc.aadhaar_images || !user.kyc.pan_images || !user.aadhaar_number || !user.pan_number){
+    if (!user) return res.status(400).json({ message: "User not found" });
+
+    if (!user.kyc || !user.kyc.aadhaar_images || !user.kyc.pan_images || !user.aadhaar_number || !user.pan_number) {
       return res.status(400).json({ message: "User KYC not completed" });
     }
+
     const scheme = await Scheme.findById(scheme_id);
-    if (!scheme) {
-      return res.status(400).json({ message: "Scheme not found" });
-    }
+    if (!scheme) return res.status(400).json({ message: "Scheme not found" });
+
     if (scheme.scheme_type !== 'diamond') {
       return res.status(400).json({ message: "This is not a Diamond subscription scheme" });
     }
+
+    if (!initial_amount) {
+      return res.status(400).json({ message: "Amount is required for Diamond subscription" });
+    }
+
     const subscriptionData = {
       user_id,
       scheme_id,
       initial_amount,
-      payment_status:'pending',
+      payment_status: 'pending',
       subscribe_status: 'waiting',
       created_at: new Date(),
     };
-    if (!initial_amount) {
-      return res.status(400).json({ message: "Amount is required for Diamond subscription" });
-    }
-    subscriptionData.initial_amount = initial_amount;
-    const subscription = new DiamondSubscription(subscriptionData);
 
+    const subscription = new DiamondSubscription(subscriptionData);
     await subscription.save();
-    res.status(201).json({ message: "Diamond subscription created successfully", subscription });
+
+    // Notify all admins
+    const admins = await User.find({ role: 'admin', fcm_token: { $ne: null } });
+
+    const messages = admins.map(adminUser => ({
+      token: adminUser.fcm_token,
+      notification: {
+        title: 'New Diamond Subscription',
+        body: `User ${user.name} has created a new diamond subscription.`,
+      },
+      data: {
+        userId: user._id.toString(),
+        subscriptionId: subscription._id.toString(),
+      }
+    }));
+
+    const responses = await Promise.all(
+      messages.map(message => admin.messaging().send(message))
+    );
+
+    res.status(201).json({
+      message: "Diamond subscription created successfully and admins notified",
+      subscription,
+      notification_results: responses
+    });
 
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "An error occurred while creating the subscription", error });
   }
-};
+}
 
 const updateGoldSubscription = async (req, res) => {
   try {
