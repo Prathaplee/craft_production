@@ -38,7 +38,7 @@ app.use('/', authRoutes);
 // app.use('/', verifyToken, referralRoutes);
 // app.use('/', verifyToken, rateRoutes);
 // app.use('/', verifyToken, versionRoutes);
-app.use('/', verifyToken, routes);
+// app.use('/',  routes);
 
 app.use('/', userRoutes, cors());
 app.use('/', schemeRoutes);
@@ -70,4 +70,4 @@ app.listen(port, () => {
 });
 
 
-require('./crons/reminderCron');
+// require('./crons/reminderCron');
