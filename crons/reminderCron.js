@@ -1,7 +1,9 @@
+// jobs/reminder.js
 const cron = require('node-cron');
 const admin = require('../config/firebase');
-const User = require('../models/User'); 
+const User = require('../models/User'); // Adjust path if different
 
+// Run every minute
 cron.schedule('*/1 * * * *', async () => {
   try {
     const users = await User.find({ fcm_token: { $ne: null } });
@@ -15,8 +17,8 @@ cron.schedule('*/1 * * * *', async () => {
         token: user.fcm_token,
       };
 
-      await admin.messaging().send(message);
-      console.log(`Notification sent to ${user.phonenumber}`);
+      const response = await admin.messaging().send(message);
+      console.log(`Notification sent to ${user.phonenumber} → ${response}`);
     }
   } catch (err) {
     console.error('Error sending reminders:', err);

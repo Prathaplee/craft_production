@@ -70,4 +70,4 @@ app.listen(port, () => {
 });
 
 
-// require('./crons/reminderCron');
+require('./crons/reminderCron');

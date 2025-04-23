@@ -140,7 +140,7 @@ const createDiamondSubscription = async (req, res) => {
     }));
 
     const responses = await Promise.all(
-      messages.map(message => admin.messaging().send(message))
+      messages.map(message => admin.messaging().send(message)) 
     );
 
     res.status(201).json({
