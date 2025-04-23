@@ -36,3 +36,6 @@ yarn-error.*
 
 app-example
 .env
+
+# Google Cloud credentials
+serviceAccountKey.json
