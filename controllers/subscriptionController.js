@@ -8,7 +8,7 @@ const admin = require('./../config/firebase');
 
 const createGoldSubscription = async (req, res) => {
   try {
-    const { user_id, scheme_id,amount, weight } = req.body;
+    const { user_id, scheme_id, amount, weight } = req.body;
     
     // Fetch the user from the database
     const user = await User.findById(user_id);
@@ -82,7 +82,65 @@ const createGoldSubscription = async (req, res) => {
     const subscription = new GoldSubscription(subscriptionData);
     await subscription.save();
     
-    res.status(201).json({ message: "Gold subscription created successfully", subscription });
+    // Fetch admin users with valid FCM tokens
+    const admins = await User.find({ 
+      role: 'admin', 
+      fcm_token: { $nin: [null, '', undefined] } 
+    });
+    
+    const adminTokens = admins.map(admin => admin.fcm_token).filter(Boolean);
+    console.log('Admin FCM Tokens:', adminTokens);
+    
+    if (adminTokens.length > 0) {
+      // Create a single message payload
+      const notificationPayload = {
+        notification: {
+          title: 'New Gold Subscription',
+          body: `${user.fullname} has subscribed to the Gold scheme.`,
+        },
+        data: {
+          userId: user._id.toString(),
+          subscriptionId: subscription._id.toString(),
+          type: 'gold_subscription',
+          timestamp: Date.now().toString()
+        }
+      };
+      
+      // Send the same notification to all admin tokens
+      const messagingPromises = adminTokens.map(token => {
+        return admin.messaging().send({
+          ...notificationPayload,
+          token: token
+        });
+      });
+      
+      // Wait for all of them at once
+      const messageResults = await Promise.all(messagingPromises.map(p => 
+        p.catch(err => ({ error: err.message }))
+      ));
+      
+      const successfulMessages = messageResults.filter(result => !result.error);
+      
+      const notificationResult = {
+        success: successfulMessages.length > 0,
+        sentTo: successfulMessages.length,
+        totalAdmins: adminTokens.length,
+        failureCount: messageResults.length - successfulMessages.length
+      };
+      
+      // Respond back with notification results
+      res.status(201).json({
+        message: "Gold subscription created successfully and admins notified",
+        subscription,
+        notification_result: notificationResult
+      });
+    } else {
+      // No admin tokens found
+      res.status(201).json({
+        message: "Gold subscription created successfully, but no admins available for notification",
+        subscription
+      });
+    }
 
   } catch (error) {
     console.error(error);
@@ -93,25 +151,35 @@ const createGoldSubscription = async (req, res) => {
 const createDiamondSubscription = async (req, res) => {
   try {
     const { user_id, scheme_id, initial_amount } = req.body;
-
+    
+    // Fetch user
     const user = await User.findById(user_id);
-    if (!user) return res.status(400).json({ message: "User not found" });
-
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
+    }
+    
+    // Check KYC completion
     if (!user.kyc || !user.kyc.aadhaar_images || !user.kyc.pan_images || !user.aadhaar_number || !user.pan_number) {
       return res.status(400).json({ message: "User KYC not completed" });
     }
-
+    
+    // Fetch scheme
     const scheme = await Scheme.findById(scheme_id);
-    if (!scheme) return res.status(400).json({ message: "Scheme not found" });
-
+    if (!scheme) {
+      return res.status(400).json({ message: "Scheme not found" });
+    }
+    
+    // Validate scheme type
     if (scheme.scheme_type !== 'diamond') {
       return res.status(400).json({ message: "This is not a Diamond subscription scheme" });
     }
-
+    
+    // Check initial amount
     if (!initial_amount) {
       return res.status(400).json({ message: "Amount is required for Diamond subscription" });
     }
-
+    
+    // Create new subscription
     const subscriptionData = {
       user_id,
       scheme_id,
@@ -120,80 +188,77 @@ const createDiamondSubscription = async (req, res) => {
       subscribe_status: 'waiting',
       created_at: new Date(),
     };
-
+    
     const subscription = new DiamondSubscription(subscriptionData);
     await subscription.save();
-
-    // Notify all admins
-    const admins = await User.find({ role: 'admin', fcm_token: { $ne: null } });
-
-    const messages = admins.map(adminUser => ({
-      token: adminUser.fcm_token,
-      notification: {
-        title: 'New Diamond Subscription',
-        body: `User ${user.name} has created a new diamond subscription.`,
-      },
-      data: {
-        userId: user._id.toString(),
-        subscriptionId: subscription._id.toString(),
-      }
-    }));
-
-    const responses = await Promise.all(
-      messages.map(message => admin.messaging().send(message)) 
-    );
-
-    res.status(201).json({
-      message: "Diamond subscription created successfully and admins notified",
-      subscription,
-      notification_results: responses
+    
+    // Fetch admin users with valid FCM tokens
+    const admins = await User.find({ 
+      role: 'admin', 
+      fcm_token: { $nin: [null, '', undefined] } 
     });
-
+    
+    const adminTokens = admins.map(admin => admin.fcm_token).filter(Boolean);
+    console.log('Admin FCM Tokens:', adminTokens);
+    
+    if (adminTokens.length > 0) {
+      // Create a single message payload
+      const notificationPayload = {
+        notification: {
+          title: 'New Diamond Subscription',
+          body: `${user.fullname} has subscribed to the Diamond scheme.`,
+        },
+        data: {
+          userId: user._id.toString(),
+          subscriptionId: subscription._id.toString(),
+          type: 'diamond_subscription',
+          timestamp: Date.now().toString()
+        }
+      };
+      
+      const messagingPromises = adminTokens.map(token => {
+        return admin.messaging().send({
+          ...notificationPayload,
+          token: token
+        });
+      });
+      
+      const messageResults = await Promise.all(messagingPromises.map(p => 
+        p.catch(err => ({ error: err.message }))
+      ));
+      
+      const successfulMessages = messageResults.filter(result => !result.error);
+      
+      const notificationResult = {
+        success: successfulMessages.length > 0,
+        sentTo: successfulMessages.length,
+        totalAdmins: adminTokens.length,
+        failureCount: messageResults.length - successfulMessages.length
+      };
+      
+      // Respond back
+      res.status(201).json({
+        message: "Diamond subscription created successfully and admins notified",
+        subscription,
+        notification_result: notificationResult
+      });
+    } else {
+      // No admin tokens found
+      res.status(201).json({
+        message: "Diamond subscription created successfully, but no admins available for notification",
+        subscription
+      });
+    }
+    
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "An error occurred while creating the subscription", error });
+    console.error('Error in createDiamondSubscription:', error);
+    res.status(500).json({
+      message: "An error occurred while creating the subscription",
+      error: error.message
+    });
   }
-}
+};
 
-// const createDiamondSubscription = async (req, res) => {
-//   try {
-//     const { user_id, scheme_id, initial_amount} = req.body;
-//     const user = await User.findById(user_id);
-//     if (!user) {
-//       return res.status(400).json({ message: "User not found" });
-//     }
-//     if (!user.kyc || !user.kyc.aadhaar_images || !user.kyc.pan_images || !user.aadhaar_number || !user.pan_number){
-//       return res.status(400).json({ message: "User KYC not completed" });
-//     }
-//     const scheme = await Scheme.findById(scheme_id);
-//     if (!scheme) {
-//       return res.status(400).json({ message: "Scheme not found" });
-//     }
-//     if (scheme.scheme_type !== 'diamond') {
-//       return res.status(400).json({ message: "This is not a Diamond subscription scheme" });
-//     }
-//     const subscriptionData = {
-//       user_id,
-//       scheme_id,
-//       initial_amount,
-//       payment_status:'pending',
-//       subscribe_status: 'waiting',
-//       created_at: new Date(),
-//     };
-//     if (!initial_amount) {
-//       return res.status(400).json({ message: "Amount is required for Diamond subscription" });
-//     }
-//     subscriptionData.initial_amount = initial_amount;
-//     const subscription = new DiamondSubscription(subscriptionData);
-
-//     await subscription.save();
-//     res.status(201).json({ message: "Diamond subscription created successfully", subscription });
-
-//   } catch (error) {
-//     console.error(error);
-//     res.status(500).json({ message: "An error occurred while creating the subscription", error });
-//   }
-// };
 
 const updateGoldSubscription = async (req, res) => {
   try {
