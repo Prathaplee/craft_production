@@ -12,22 +12,23 @@ const rateRoutes = require('./routes/rateRoutes');
 const versionRoutes = require('./routes/versionRoutes');
 const authRoutes=require('./routes/authRoutes.js')
 const routes=require('./routes/routes.js')
-const os = require('os'); // Import os module
+const os = require('os'); 
+const cron = require('node-cron');
+const notification = require('./controllers/notificationController');
+const sendReminderNotifications = require('./crons/reminderCron.js');
 
-const { swaggerUi, swaggerDocs } = require('./swagger'); // Import Swagger configuration
-const verifyToken = require('./auth.js'); // Import token verification middleware
+const { swaggerUi, swaggerDocs } = require('./swagger'); 
+const verifyToken = require('./auth.js'); 
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve Swagger UI
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 app.get('/swagger.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
-  res.send(swaggerDocs); // Send the generated Swagger spec as JSON
+  res.send(swaggerDocs); 
 });
 
-// Routes that do not require token verification
 app.use('/', authRoutes);
 
 // Apply the token verification middleware to protected routes
@@ -47,6 +48,7 @@ app.use('/',  paymentRoutes);
 app.use('/',  referralRoutes);
 app.use('/',  rateRoutes);
 app.use('/',  versionRoutes);
+app.use('/',  notification);
 
 
 const getLocalIp = () => {
@@ -70,4 +72,12 @@ app.listen(port, () => {
 });
 
 
-// require('./crons/reminderCron');
+cron.schedule('0 10 * * *', async () => {
+  console.log('Morning Reminder Triggered');
+  await sendReminderNotifications();
+});
+
+cron.schedule('0 17 * * *', async () => {
+  console.log('Evening Reminder Triggered');
+  await sendReminderNotifications();
+});
