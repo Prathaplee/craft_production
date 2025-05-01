@@ -36,4 +36,5 @@ const schemeSchema = new mongoose.Schema({
 // Create the model
 const Scheme = db.model('Scheme', schemeSchema);
 
+module.exports = mongoose.model('Scheme', schemeSchema);
 module.exports = Scheme;
