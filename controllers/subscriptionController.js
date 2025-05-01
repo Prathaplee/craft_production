@@ -430,24 +430,39 @@ const getSubscriptionReport = async (req, res) => {
         subscriptions.map(async (subscription) => {
           let scheme = null;
           let userPhone = null;
+          let fcmToken = null;
 
-          // Fetch scheme if exists
           if (subscription.scheme_id) {
             scheme = await Scheme.findById(subscription.scheme_id);
           }
 
-          // Fetch user phone number if user_id exists
           if (subscription.user_id) {
-            const user = await User.findById(subscription.user_id, 'phonenumber');
+            const user = await User.findById(subscription.user_id, 'phonenumber fcm_token');
             userPhone = user?.phonenumber || null;
-            fcmToken=user?.fcm_token || null;
+            fcmToken = user?.fcm_token || null;
           }
+
+          const monthlyAmount = subscription.initial_amount; // Assuming fixed amount per month
+          const dueDates = subscription.due_date || [];
+
+          // Filter completed payments
+          const completedPayments = (subscription.payments || []).filter(p => p.payment_status === 'completed');
+
+          // Total amount paid
+          const totalPaid = completedPayments.reduce((sum, p) => sum + (p.payment_amount || 0), 0);
+
+          // Number of dues fully covered by payment
+          const fullyPaidCount = Math.floor(totalPaid / monthlyAmount);
+
+          // Status array: true for paid, false for unpaid
+          const due_dates_status = dueDates.map((_, index) => index < fullyPaidCount);
 
           return {
             ...subscription.toObject(),
             schemeDetails: scheme || null,
             phonenumber: userPhone,
-            fcm_token: fcmToken
+            fcm_token: fcmToken,
+            due_dates_status
           };
         })
       );
@@ -473,6 +488,7 @@ const getSubscriptionReport = async (req, res) => {
     });
   }
 };
+
 
 // const getSubscriptionReport = async (req, res) => {
 //   try {
