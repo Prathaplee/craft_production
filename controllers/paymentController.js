@@ -208,74 +208,60 @@ exports.createDiamondPaymentOrder = async (req, res) => {
 //   }
 // };
 exports.verifyPayment = async (req, res) => {
-  const { subscription_id, payment_id, order_id, signature } = req.body;
+  const { subscription_id, payment_id, order_id, signature, scheme_type } = req.body;
 
   try {
-    // Step 1: Find the subscription by ID
-    const subscription = await GoldSubscription.findById(subscription_id)
-      .populate({
-        path: 'scheme_id',
-        select: 'scheme_type',
-      });
+    // Step 1: Choose model based on scheme_type
+    let SubscriptionModel;
+    if (scheme_type === 'gold') {
+      SubscriptionModel = GoldSubscription;
+    } else if (scheme_type === 'diamond') {
+      SubscriptionModel = DiamondSubscription;
+    } else {
+      return res.status(400).json({ message: 'Invalid scheme_type provided' });
+    }
 
-    // Step 2: Handle if the subscription is not found
+    // Step 2: Fetch the subscription
+    const subscription = await SubscriptionModel.findById(subscription_id).populate('scheme_id', 'scheme_type');
+
     if (!subscription) {
       return res.status(404).json({ message: 'Subscription not found' });
     }
 
-    // Step 3: Retrieve the scheme_type from the populated scheme_id
-    const { scheme_type } = subscription.scheme_id;
-    const SubscriptionModel = scheme_type === 'gold' ? GoldSubscription : DiamondSubscription;
-
-    // Step 4: Find the updated subscription in the correct model
-    const updatedSubscription = await SubscriptionModel.findById(subscription_id);
-
-    // Step 5: Handle if the updated subscription is not found
-    if (!updatedSubscription) {
-      return res.status(404).json({ message: 'Subscription not found in the model' });
-    }
-
-    // Step 6: Verify the Razorpay signature
-    const body = order_id + "|" + payment_id;
+    // Step 3: Verify Razorpay signature
+    const body = order_id + '|' + payment_id;
     const expectedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-      .update(body.toString())
+      .createHmac('sha256', process.env.RAZORPAY_SECRET_KEY)
+      .update(body)
       .digest('hex');
 
     if (expectedSignature !== signature) {
-      return res.status(400).json({ message: 'Payment verification failed' });
+      return res.status(400).json({ message: 'Invalid signature. Payment verification failed.' });
     }
 
-    // Step 7: Verify if the amount is correct (you should have the amount from Razorpay order)
-    if (updatedSubscription.amount !== parseFloat(req.body.amount)) {
-      return res.status(400).json({ message: 'Amount mismatch' });
+    // Step 4: Update payment record
+    const paymentRecord = subscription.payments.find(p => p.razorpay_order_id === order_id);
+    if (!paymentRecord) {
+      return res.status(404).json({ message: 'Payment record not found in subscription' });
     }
 
-    // Step 8: Update the subscription with payment details
-    updatedSubscription.payments.push({
-      payment_amount: updatedSubscription.amount,
-      payment_status: 'completed',
-      payment_method: 'razorpay',
-      razorpay_order_id: order_id,
-      razorpay_payment_id: payment_id,
-      razorpay_signature: signature,
-    });
+    paymentRecord.payment_id = payment_id;
+    paymentRecord.payment_status = 'success';
+    paymentRecord.payment_verified_at = new Date();
 
-    // Step 9: Update the subscription status to 'active'
-    updatedSubscription.subscribe_status = 'active'; // Set status to active after payment
-    updatedSubscription.updated_at = new Date();
+    subscription.updated_at = new Date();
+    await subscription.save();
 
-    // Step 10: Save the updated subscription
-    await updatedSubscription.save();
-
-    // Step 11: Send response with success message
+    // Step 5: Return success response
     res.json({
       message: 'Payment verified successfully',
-      subscription: updatedSubscription,
+      subscription_id,
+      payment_id,
+      scheme_type,
     });
+
   } catch (error) {
-    // Step 12: Handle errors
-    console.error('Error verifying Razorpay payment:', error);
+    console.error('Error verifying payment:', error);
     res.status(500).json({ message: 'Internal Server Error' });
   }
 };
