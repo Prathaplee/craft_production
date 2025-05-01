@@ -1,8 +1,9 @@
 const Razorpay = require('razorpay');
 const { GoldSubscription, DiamondSubscription } = require('../models/Subscription');
-const Scheme = require('../models/Scheme'); // Import the Scheme model
+const Scheme = require('../models/Scheme');
+const crypto = require('crypto');
 
-// Razorpay instance initialization
+// Razorpay instance initializationf
 const razorpayInstance = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_SECRET_KEY,
@@ -245,9 +246,10 @@ exports.verifyPayment = async (req, res) => {
       return res.status(404).json({ message: 'Payment record not found in subscription' });
     }
 
-    paymentRecord.payment_id = payment_id;
-    paymentRecord.payment_status = 'success';
-    paymentRecord.payment_verified_at = new Date();
+    paymentRecord.razorpay_payment_id = payment_id;
+    paymentRecord.razorpay_signature = signature;  // Ensure the signature is saved
+    paymentRecord.payment_status = 'completed';
+    // paymentRecord.payment_verified_at = new Date();
 
     subscription.updated_at = new Date();
     await subscription.save();
