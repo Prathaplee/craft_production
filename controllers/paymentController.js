@@ -2,6 +2,8 @@ const Razorpay = require('razorpay');
 const { GoldSubscription, DiamondSubscription } = require('../models/Subscription');
 const Scheme = require('../models/Scheme');
 const crypto = require('crypto');
+const admin = require('./../config/firebase');
+const User = require('../models/User');
 
 // Razorpay instance initializationf
 const razorpayInstance = new Razorpay({
@@ -212,7 +214,7 @@ exports.verifyPayment = async (req, res) => {
   const { subscription_id, payment_id, order_id, signature, scheme_type } = req.body;
 
   try {
-    // Step 1: Choose model based on scheme_type
+    // 1. Select Subscription Model
     let SubscriptionModel;
     if (scheme_type === 'gold') {
       SubscriptionModel = GoldSubscription;
@@ -222,14 +224,23 @@ exports.verifyPayment = async (req, res) => {
       return res.status(400).json({ message: 'Invalid scheme_type provided' });
     }
 
-    // Step 2: Fetch the subscription
-    const subscription = await SubscriptionModel.findById(subscription_id).populate('scheme_id', 'scheme_type');
-
+    // 2. Fetch Subscription
+    const subscription = await SubscriptionModel.findById(subscription_id);
     if (!subscription) {
       return res.status(404).json({ message: 'Subscription not found' });
     }
 
-    // Step 3: Verify Razorpay signature
+    if (!subscription.user_id) {
+      return res.status(400).json({ message: 'User not linked to subscription' });
+    }
+
+    // 3. Fetch User by ID
+    const user = await User.findById(subscription.user_id, 'phonenumber fcm_token fullname role');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // 4. Verify Razorpay Signature
     const body = order_id + '|' + payment_id;
     const expectedSignature = crypto
       .createHmac('sha256', process.env.RAZORPAY_SECRET_KEY)
@@ -240,30 +251,114 @@ exports.verifyPayment = async (req, res) => {
       return res.status(400).json({ message: 'Invalid signature. Payment verification failed.' });
     }
 
-    // Step 4: Update payment record
+    // 5. Update Payment Record
     const paymentRecord = subscription.payments.find(p => p.razorpay_order_id === order_id);
     if (!paymentRecord) {
       return res.status(404).json({ message: 'Payment record not found in subscription' });
     }
 
     paymentRecord.razorpay_payment_id = payment_id;
-    paymentRecord.razorpay_signature = signature;  // Ensure the signature is saved
+    paymentRecord.razorpay_signature = signature;
     paymentRecord.payment_status = 'completed';
-    // paymentRecord.payment_verified_at = new Date();
-
     subscription.updated_at = new Date();
+
     await subscription.save();
 
-    // Step 5: Return success response
+    // 6. Get Admins with valid FCM tokens
+    const admins = await User.find({
+      role: 'admin',
+      fcm_token: { $nin: [null, '', undefined] }
+    });
+
+    const adminTokens = admins.map(admin => admin.fcm_token).filter(Boolean);
+    const userToken = user.fcm_token;
+
+    const adminPayload = {
+      notification: {
+        title: 'New Subscription Payment',
+        body: `${user.fullname || 'A user'} just paid for a ${scheme_type} subscription.`,
+      },
+      data: {
+        type: 'admin_payment_alert',
+        userId: user._id.toString(),
+        subscriptionId: subscription._id.toString(),
+        timestamp: Date.now().toString()
+      }
+    };
+
+    const messagingPromises = [];
+    const adminSendResults = [];
+
+    // 7. Send admin notifications
+    for (const token of adminTokens) {
+      messagingPromises.push(
+        admin.messaging().send({ ...adminPayload, token })
+          .then(response => adminSendResults.push({ token, status: 'fulfilled', response }))
+          .catch(error => {
+            console.error(`❌ Failed to send admin notification to token [${token}]: ${error.message}`);
+            console.debug(error); // Full error object for debugging
+            adminSendResults.push({ token, status: 'rejected', error });
+          })
+          
+      );
+    }
+
+    let userSendResult = null;
+
+    // 8. Send user notification if token exists
+    if (userToken) {
+      const userPayload = {
+        token: userToken,
+        notification: {
+          title: 'Payment Successful',
+          body: `Your payment for the ${scheme_type} subscription is confirmed.`,
+        },
+        data: {
+          type: 'user_payment_success',
+          subscriptionId: subscription._id.toString(),
+          timestamp: Date.now().toString()
+        }
+      };
+
+      messagingPromises.push(
+        admin.messaging().send(userPayload)
+          .then(response => { userSendResult = { status: 'fulfilled', response }; })
+          .catch(error => {
+            console.error(`❌ Failed to send user notification to token [${userToken}]: ${error.message}`);
+            console.debug(error); // Full error object for debugging
+            userSendResult = { status: 'rejected', error };
+          })          
+      );
+    }
+
+    await Promise.allSettled(messagingPromises);
+
+    const adminSuccessCount = adminSendResults.filter(r => r.status === 'fulfilled').length;
+    const adminFailureCount = adminSendResults.length - adminSuccessCount;
+
+    const userReceived = userSendResult?.status === 'fulfilled';
+
+    // 9. Final Response
     res.json({
-      message: 'Payment verified successfully',
+      message: 'Payment verified successfully, notifications sent',
       subscription_id,
       payment_id,
       scheme_type,
+      notifications: {
+        admin: {
+          total: adminSendResults.length,
+          sent: adminSuccessCount,
+          failed: adminFailureCount
+        },
+        user: {
+          attempted: !!userToken,
+          received: userReceived
+        }
+      }
     });
 
   } catch (error) {
     console.error('Error verifying payment:', error);
-    res.status(500).json({ message: 'Internal Server Error' });
+    res.status(500).json({ message: 'Internal Server Error', error: error.message });
   }
 };
