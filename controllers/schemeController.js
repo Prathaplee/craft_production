@@ -1,5 +1,7 @@
 const mongoose = require('mongoose');
 const Scheme = require('../models/Scheme');
+const fs = require('fs').promises;
+const path = require('path');
 
 // Create a new scheme
 exports.createScheme = async (req, res) => {
@@ -10,21 +12,31 @@ exports.createScheme = async (req, res) => {
       min_amount,
       max_amount,
       duration,
-      scheme_description,
       is_weight_or_amount,
       min_weight,
       max_weight
     } = req.body;
 
-    // Check if scheme_type exists
+    // Validate and normalize scheme_type
     if (!scheme_type || typeof scheme_type !== 'string') {
       return res.status(400).send({ message: 'scheme_type is required and must be a string.' });
     }
 
-    // Normalize and validate `scheme_type`
     const normalizedSchemeType = scheme_type.toLowerCase();
     if (!['diamond', 'gold'].includes(normalizedSchemeType)) {
       return res.status(400).send({ message: 'Invalid scheme_type. Allowed values are diamond or gold.' });
+    }
+
+    // Determine file path
+    const fileName = normalizedSchemeType === 'gold' ? 'Gold_Scheme.txt' : 'Diamond_Scheme.txt';
+    const filePath = path.join(__dirname, '..',fileName);
+
+    // Read file content
+    let scheme_description = '';
+    try {
+      scheme_description = await fs.readFile(filePath, 'utf-8');
+    } catch (fileErr) {
+      return res.status(500).send({ message: `Error reading ${fileName}`, error: fileErr.message });
     }
 
     // Create and save the scheme
@@ -46,6 +58,7 @@ exports.createScheme = async (req, res) => {
     res.status(500).send({ message: 'Error creating scheme', error: err.message });
   }
 };
+
 
 
 // Get all schemes
