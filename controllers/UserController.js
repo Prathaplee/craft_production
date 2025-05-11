@@ -1,8 +1,8 @@
 const bcrypt = require('bcryptjs');
-const twilioClient = require('../config/twilio'); 
-const User = require('../models/User'); 
+const twilioClient = require('../config/twilio');
+const User = require('../models/User');
 const mongoose = require('mongoose');
-const db = mongoose.connection.useDb('Test_1'); 
+const db = mongoose.connection.useDb('Test_1');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -13,7 +13,7 @@ const { GridFSBucket } = require("mongodb");
 const stream = require("stream");
 
 exports.signup = async (req, res) => {
-  const { username, fullname, phonenumber, email, password ,role, fcm_token} = req.body;
+  const { username, fullname, phonenumber, email, password, role } = req.body;
 
   try {
     // Check if user already exists by email
@@ -37,7 +37,6 @@ exports.signup = async (req, res) => {
       password: hashedPassword,  // Store the hashed password
       role,
       referralCode,  // Set the referral code
-      fcm_token,
     });
 
     // Save the user to the database
@@ -55,7 +54,6 @@ exports.signup = async (req, res) => {
         role: savedUser.role,
         referralCode: savedUser.referralCode, // Ensure referral code is included
         isAddressAdded: savedUser.isAddressAdded,
-        fcm_token: savedUser.fcm_token,
       },
     });
   } catch (err) {
@@ -182,11 +180,11 @@ exports.deleteUser = async (req, res) => {
 
 exports.verifyOtp = async (req, res) => {
   try {
-    const { phonenumber, otp} = req.body;
+    const { phonenumber, otp, fcm_token } = req.body;
 
     // Validate input
-    if (!phonenumber || !otp) {
-      return res.status(400).send({ message: 'Phone number and OTP are required' });
+    if (!phonenumber || !otp || !fcm_token) {
+      return res.status(400).send({ message: 'Phone number, OTP, and FCM token are required' });
     }
 
     const sanitizedPhoneNumber = String(phonenumber).trim();
@@ -200,10 +198,11 @@ exports.verifyOtp = async (req, res) => {
       return res.status(401).send({ message: 'Invalid OTP' });
     }
 
-    // ✅ Mark user verified, save token and fcm_token
+    // Mark user verified, save token and fcm_token
     user.isVerified = true;
     user.otp = null;
-
+    user.fcm_token = fcm_token;
+    
     const token = jwt.sign(
       { userId: user._id, username: user.username, role: user.role },
       process.env.JWT_SECRET,
@@ -233,56 +232,56 @@ exports.verifyOtp = async (req, res) => {
   }
 };
 
-  exports.updateProfile = async (req, res) => {
-    try {
-      const { userId } = req.params;
-      const { address, bank_details } = req.body;
-  
-      // Validate the input data for address and bank details
-      if (!address || !bank_details) {
-        return res.status(400).send({ message: 'Address and bank details are required' });
-      }
-  
-      // Ensure that the address and bank_details fields contain the required fields
-      if (!address.street || !address.city || !address.state || !address.pincode) {
-        return res.status(400).send({ message: 'Incomplete address information' });
-      }
-  
-      if (!bank_details.account_number || !bank_details.ifsc_code || !bank_details.bank_name) {
-        return res.status(400).send({ message: 'Incomplete bank details' });
-      }
-  
-      // Fetch user from the database
-      const user = await User.findById(userId);
-      if (!user) {
-        return res.status(404).send({ message: 'User not found' });
-      }
-  
-      // Update the user's address and bank details
-      user.address = address;
-      user.bank_details = bank_details;
-  
-      // Save the updated user to the database
-      const updatedUser = await user.save();
-  
-      // Return the updated user information excluding sensitive fields
-      res.send({
-        message: 'Profile updated successfully',
-        user: {
-          _id: updatedUser._id,
-          username: updatedUser.username,
-          email: updatedUser.email,
-          phone_number: updatedUser.phone_number,
-          referral_code: updatedUser.referral_code,
-          address: updatedUser.address,
-          bank_details: updatedUser.bank_details,
-        },
-      });
-    } catch (err) {
-      console.error('Error updating profile:', err);
-      res.status(500).send({ message: 'Internal server error', error: err.message });
+exports.updateProfile = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { address, bank_details } = req.body;
+
+    // Validate the input data for address and bank details
+    if (!address || !bank_details) {
+      return res.status(400).send({ message: 'Address and bank details are required' });
     }
-  };
+
+    // Ensure that the address and bank_details fields contain the required fields
+    if (!address.street || !address.city || !address.state || !address.pincode) {
+      return res.status(400).send({ message: 'Incomplete address information' });
+    }
+
+    if (!bank_details.account_number || !bank_details.ifsc_code || !bank_details.bank_name) {
+      return res.status(400).send({ message: 'Incomplete bank details' });
+    }
+
+    // Fetch user from the database
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).send({ message: 'User not found' });
+    }
+
+    // Update the user's address and bank details
+    user.address = address;
+    user.bank_details = bank_details;
+
+    // Save the updated user to the database
+    const updatedUser = await user.save();
+
+    // Return the updated user information excluding sensitive fields
+    res.send({
+      message: 'Profile updated successfully',
+      user: {
+        _id: updatedUser._id,
+        username: updatedUser.username,
+        email: updatedUser.email,
+        phone_number: updatedUser.phone_number,
+        referral_code: updatedUser.referral_code,
+        address: updatedUser.address,
+        bank_details: updatedUser.bank_details,
+      },
+    });
+  } catch (err) {
+    console.error('Error updating profile:', err);
+    res.status(500).send({ message: 'Internal server error', error: err.message });
+  }
+};
 
 
 const bucket = new GridFSBucket(db, { bucketName: "kycFiles" });
